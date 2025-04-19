@@ -67,7 +67,7 @@ const Product = () => {
 
     try {
       const response = await fetch(
-        "https://api.imgbb.com/1/upload?key=YOUR_IMGBB_API_KEY",
+        "https://api.imgbb.com/1/upload?key=469a04307304348b89f3e402eb9bf96f",
         {
           method: "POST",
           body: formData,
