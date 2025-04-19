@@ -90,12 +90,7 @@ const Dashboard = ({ sliders }) => {
         }}
         className="hidden lg:block">
         <div className="logo-container py-4 flex items-center justify-center bg-white">
-          <Image
-            src="/images/logo.png"
-            alt="HOKTOK Logo"
-            width={collapsed ? 50 : 180}
-            height={collapsed ? 25 : 50}
-          />
+          HOK TOK
         </div>
 
         <Menu
