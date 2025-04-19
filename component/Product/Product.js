@@ -136,11 +136,21 @@ const Product = () => {
         return;
       }
 
+      // Ensure we have the product ID when in edit mode
+      if (editMode && !currentProduct?._id) {
+        message.error("Product ID missing");
+        return;
+      }
+
+      let response;
       if (editMode) {
-        await coreAxios.put(`/product/${currentProduct._id}`, values);
+        response = await coreAxios.put(
+          `/product/${currentProduct._id}`,
+          values
+        );
         message.success("Product updated successfully");
       } else {
-        await coreAxios.post("/product", values);
+        response = await coreAxios.post("/product", values);
         message.success("Product created successfully");
       }
 
@@ -150,7 +160,10 @@ const Product = () => {
       setSizes([]);
       fetchProducts();
     } catch (error) {
-      message.error(error.response?.data?.message || "Operation failed");
+      console.error("Error:", error);
+      message.error(
+        error.response?.data?.message || error.message || "Operation failed"
+      );
     }
   };
 
