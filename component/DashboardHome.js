@@ -24,6 +24,8 @@ import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import { Formik, Form, Field } from "formik";
 
+dayjs.extend(isBetween);
+
 const { Title } = Typography;
 const { Option } = Select;
 
@@ -32,7 +34,6 @@ const DashboardHome = () => {
   const [loading, setLoading] = useState(false);
   const [loading2, setLoading2] = useState(false);
   const [storeInfo, setStoreInfo] = useState([]);
-  const [filteredOrders, setFilteredOrders] = useState([]);
   const [products, setProducts] = useState([]);
 
   const userInfo = JSON.parse(localStorage.getItem("userInfo"));
@@ -40,13 +41,13 @@ const DashboardHome = () => {
 
   useEffect(() => {
     fetchStoreInfo();
-    fetchOrdersByStoreID(userStoreID);
+    fetchOrders();
     fetchProducts();
   }, []);
 
   const fetchProducts = async () => {
     try {
-      const response = await coreAxios.get("/products");
+      const response = await coreAxios.get("/product");
       if (response.status === 200) {
         setProducts(response.data);
       }
@@ -55,21 +56,20 @@ const DashboardHome = () => {
     }
   };
 
-  const fetchOrdersByStoreID = async (storeID) => {
+  const fetchOrders = async () => {
     setLoading2(true);
     try {
-      const response = await coreAxios.post("getOrdersByStoreID", {
-        storeID: storeID,
-      });
+      const response = await coreAxios.get("/orders");
       if (response.status === 200) {
-        const filtered = response?.data?.filter(
-          (data) => data.statusID !== 255
-        );
-        setFilteredOrders(filtered);
+        // Handle both array and paginated response
+        const ordersData = Array.isArray(response.data)
+          ? response.data
+          : response.data.orders || [];
+        setOrders(ordersData);
       }
     } catch (error) {
-      setFilteredOrders([]);
-      message.error("No orders found for this store.");
+      message.error("Failed to fetch orders.");
+      setOrders([]);
     } finally {
       setLoading2(false);
     }
@@ -101,42 +101,58 @@ const DashboardHome = () => {
     }
   };
 
-  const today = dayjs().format("D MMM YYYY");
+  // Filter orders by store if storeID is selected
+  const filterOrdersByStore = (storeID) => {
+    if (!storeID || storeID === 0) return orders;
+    return orders.filter((order) => order.storeID === storeID);
+  };
 
   // Calculate various order metrics
-  const totalOrders = filteredOrders.length;
+  const calculateOrderStats = (ordersToCalculate) => {
+    const todayStart = dayjs().startOf("day");
+    const todayEnd = dayjs().endOf("day");
+    const thirtyDaysAgo = dayjs().subtract(30, "day").startOf("day");
+
+    return {
+      totalOrders: ordersToCalculate.length,
+      todaysOrders: ordersToCalculate.filter((order) => {
+        const orderDate = dayjs(order.status?.orderDate || order.createTime);
+        return orderDate.isBetween(todayStart, todayEnd, null, "[]");
+      }).length,
+      deliveredOrders: ordersToCalculate.filter(
+        (order) => order.status?.type === "delivered"
+      ).length,
+      totalSales: ordersToCalculate.reduce(
+        (sum, order) => sum + (order.total || 0),
+        0
+      ),
+      todaysSales: ordersToCalculate
+        .filter((order) => {
+          const orderDate = dayjs(order.status?.orderDate || order.createTime);
+          return orderDate.isBetween(todayStart, todayEnd, null, "[]");
+        })
+        .reduce((sum, order) => sum + (order.total || 0), 0),
+      last30DaysSales: ordersToCalculate
+        .filter((order) => {
+          const orderDate = dayjs(order.status?.orderDate || order.createTime);
+          return orderDate.isBetween(thirtyDaysAgo, todayEnd, null, "[]");
+        })
+        .reduce((sum, order) => sum + (order.total || 0), 0),
+    };
+  };
+
+  const [selectedStoreID, setSelectedStoreID] = useState(userStoreID || 0);
+  const filteredOrders = filterOrdersByStore(selectedStoreID);
+  const {
+    totalOrders,
+    todaysOrders,
+    deliveredOrders,
+    totalSales,
+    todaysSales,
+    last30DaysSales,
+  } = calculateOrderStats(filteredOrders);
+
   const totalProducts = products.length;
-
-  const todaysOrders = filteredOrders.filter((order) => {
-    const createTime = dayjs(order.createTime).format("D MMM YYYY");
-    return createTime === today;
-  }).length;
-
-  const completedOrders = filteredOrders.filter(
-    (order) => order.status === "completed"
-  ).length;
-
-  const totalSales = filteredOrders.reduce(
-    (sum, order) => sum + order.totalAmount,
-    0
-  );
-
-  const todaysSales = filteredOrders
-    .filter((order) => {
-      const createTime = dayjs(order.createTime).format("D MMM YYYY");
-      return createTime === today;
-    })
-    .reduce((sum, order) => sum + order.totalAmount, 0);
-
-  dayjs.extend(isBetween);
-  const thirtyDaysAgo = dayjs().subtract(30, "day");
-
-  const last30DaysSales = filteredOrders
-    .filter((order) => {
-      const createTime = dayjs(order.createTime);
-      return createTime.isBetween(thirtyDaysAgo, today, "day", "[]");
-    })
-    .reduce((sum, order) => sum + order.totalAmount, 0);
 
   return (
     <div>
@@ -152,7 +168,7 @@ const DashboardHome = () => {
         <div>
           <div className="mb-6">
             <Formik
-              initialValues={{ storeID: userStoreID || 0 }}
+              initialValues={{ storeID: selectedStoreID }}
               onSubmit={(values) => {}}>
               {({ setFieldValue, values }) => (
                 <Form>
@@ -165,8 +181,11 @@ const DashboardHome = () => {
                         style={{ width: 300 }}
                         onChange={(value) => {
                           setFieldValue("storeID", value);
-                          fetchOrdersByStoreID(value);
+                          setSelectedStoreID(value);
                         }}>
+                        <Option key={0} value={0}>
+                          All Stores
+                        </Option>
                         {storeInfo.map((store) => (
                           <Option key={store.storeID} value={store.storeID}>
                             {store.storeName}
@@ -226,7 +245,7 @@ const DashboardHome = () => {
                       title={
                         <span className="text-white">
                           <ShoppingCartOutlined className="mr-2" />
-                          {`Today's Orders`}
+                         {`Today's Orders`}
                         </span>
                       }
                       value={todaysOrders}
@@ -262,10 +281,10 @@ const DashboardHome = () => {
                       title={
                         <span className="text-white">
                           <CheckCircleOutlined className="mr-2" />
-                          Complete Orders
+                          Delivered Orders
                         </span>
                       }
-                      value={completedOrders}
+                      value={deliveredOrders}
                       valueStyle={{ color: "white" }}
                     />
                   </Card>
@@ -283,8 +302,8 @@ const DashboardHome = () => {
                           Total Sales
                         </span>
                       }
-                      value={totalSales}
-                      prefix={<DollarOutlined className="text-white" />}
+                      value={totalSales.toFixed(2)}
+                      prefix="৳"
                       valueStyle={{ color: "white" }}
                     />
                   </Card>
@@ -299,11 +318,11 @@ const DashboardHome = () => {
                       title={
                         <span className="text-white">
                           <BarChartOutlined className="mr-2" />
-                          {`Today's Sales`}
+                        {`Today's Sales`}
                         </span>
                       }
-                      value={todaysSales}
-                      prefix={<DollarOutlined className="text-white" />}
+                      value={todaysSales.toFixed(2)}
+                      prefix="৳"
                       valueStyle={{ color: "white" }}
                     />
                   </Card>
@@ -321,8 +340,8 @@ const DashboardHome = () => {
                           30 Days Sales
                         </span>
                       }
-                      value={last30DaysSales}
-                      prefix={<DollarOutlined className="text-white" />}
+                      value={last30DaysSales.toFixed(2)}
+                      prefix="৳"
                       valueStyle={{ color: "white" }}
                     />
                   </Card>

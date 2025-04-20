@@ -51,7 +51,15 @@ const Product = () => {
 
   // Define categories and subcategories
   const categories = {
-    Men: ["Shirts", "Pants", "Shoes", "Accessories"],
+    Men: [
+      "Shirt",
+      "Denim Jacket",
+      "SOLID Shirt",
+      "Check Shirt",
+      "DENIM Shirt",
+      "Paijama",
+      "Panjabi",
+    ],
     Women: ["Dresses", "Tops", "Bottoms", "Accessories"],
     Kids: ["Boys", "Girls", "Infants"],
   };

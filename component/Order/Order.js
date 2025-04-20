@@ -59,6 +59,7 @@ const OrderManagement = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [form] = Form.useForm();
+  const [statusChanging, setStatusChanging] = useState({});
 
   const statusColors = {
     pending: "orange",
@@ -86,7 +87,6 @@ const OrderManagement = () => {
       const url =
         activeTab === "all" ? "/orders" : `/orders?status=${activeTab}`;
       const response = await coreAxios.get(url);
-      // Handle both array and object response structures
       const ordersData = Array.isArray(response.data)
         ? response.data
         : response.data.orders || [];
@@ -105,14 +105,53 @@ const OrderManagement = () => {
     setIsModalVisible(true);
   };
 
+  const confirmStatusChange = (orderId, currentStatus, newStatus) => {
+    if (newStatus === "processing") {
+      Modal.confirm({
+        title: "Confirm Order Processing",
+        content:
+          "This will deduct product quantities from inventory. Continue?",
+        onOk: () => handleStatusChange(orderId, newStatus),
+      });
+    } else if (currentStatus === "processing" && newStatus === "cancelled") {
+      Modal.confirm({
+        title: "Confirm Order Cancellation",
+        content: "This will restore product quantities to inventory. Continue?",
+        onOk: () => handleStatusChange(orderId, newStatus),
+      });
+    } else {
+      handleStatusChange(orderId, newStatus);
+    }
+  };
+
   const handleStatusChange = async (orderId, status) => {
     try {
+      setStatusChanging((prev) => ({ ...prev, [orderId]: true }));
       await coreAxios.put(`/orders/${orderId}/status`, { status });
-      message.success("Status updated successfully");
+
+      let successMessage = "Status updated successfully";
+      if (status === "processing") {
+        successMessage =
+          "Order processing started - product quantities updated";
+      } else if (status === "cancelled") {
+        successMessage = "Order cancelled - product quantities restored";
+      }
+
+      message.success(successMessage);
       fetchOrders();
     } catch (error) {
       console.error("Error:", error.response?.data || error.message);
-      message.error(error.response?.data?.message || "Failed to update status");
+
+      let errorMessage = "Failed to update status";
+      if (error.response?.data?.message?.includes("Insufficient stock")) {
+        errorMessage = "Cannot process order: Insufficient stock available";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
+      message.error(errorMessage);
+    } finally {
+      setStatusChanging((prev) => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -129,6 +168,7 @@ const OrderManagement = () => {
 
   const showCreateDrawer = () => {
     form.resetFields();
+    setSelectedOrder(null);
     setIsDrawerVisible(true);
   };
 
@@ -138,7 +178,12 @@ const OrderManagement = () => {
       customer: order.customer,
       delivery: order.delivery,
       payment: order.payment,
-      status: order.status,
+      status: {
+        ...order.status,
+        orderDeliveryDate: order.status.orderDeliveryDate
+          ? dayjs(order.status.orderDeliveryDate)
+          : null,
+      },
       items: order.items,
     });
     setSelectedOrder(order);
@@ -148,17 +193,26 @@ const OrderManagement = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+
+      const payload = {
+        ...values,
+        status: {
+          ...values.status,
+          orderDeliveryDate: values.status.orderDeliveryDate
+            ? values.status.orderDeliveryDate.toISOString()
+            : null,
+        },
+      };
+
       if (selectedOrder) {
-        // Update existing order
-        await coreAxios.put(`/orders/${selectedOrder._id}`, values);
+        await coreAxios.put(`/orders/${selectedOrder._id}`, payload);
         message.success("Order updated successfully");
       } else {
-        // Create new order
-        await coreAxios.post("/orders", values);
+        await coreAxios.post("/orders", payload);
         message.success("Order created successfully");
       }
+
       setIsDrawerVisible(false);
-      // Reset selected order and refresh data
       setSelectedOrder(null);
       await fetchOrders();
     } catch (error) {
@@ -239,8 +293,13 @@ const OrderManagement = () => {
           <Select
             value={record.status.type}
             style={{ width: 120 }}
-            onChange={(value) => handleStatusChange(record._id, value)}
-            disabled={record.status.type === "cancelled"}>
+            onChange={(value) =>
+              confirmStatusChange(record._id, record.status.type, value)
+            }
+            disabled={
+              record.status.type === "cancelled" || statusChanging[record._id]
+            }
+            loading={statusChanging[record._id]}>
             <Option value="pending">Pending</Option>
             <Option value="processing">Processing</Option>
             <Option value="shipped">Shipped</Option>
@@ -265,11 +324,8 @@ const OrderManagement = () => {
         const searchLower = searchText.toLowerCase();
         return (
           order.orderNo?.toLowerCase().includes(searchLower) ||
-          false ||
           order.customer?.name?.toLowerCase().includes(searchLower) ||
-          false ||
-          order.customer?.phone?.toLowerCase().includes(searchLower) ||
-          false
+          order.customer?.phone?.toLowerCase().includes(searchLower)
         );
       })
     : [];
@@ -624,8 +680,26 @@ const OrderManagement = () => {
             <Col span={12}>
               <Form.Item
                 name={["status", "orderDeliveryDate"]}
-                label="Delivery Date">
-                <DatePicker style={{ width: "100%" }} />
+                label="Delivery Date"
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const statusType = getFieldValue(["status", "type"]);
+                      if (statusType === "delivered" && !value) {
+                        return Promise.reject(
+                          "Delivery date is required for delivered orders"
+                        );
+                      }
+                      return Promise.resolve();
+                    },
+                  }),
+                ]}>
+                <DatePicker
+                  style={{ width: "100%" }}
+                  disabledDate={(current) =>
+                    current && current < dayjs().startOf("day")
+                  }
+                />
               </Form.Item>
             </Col>
           </Row>
