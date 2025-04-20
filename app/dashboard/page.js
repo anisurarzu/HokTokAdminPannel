@@ -14,6 +14,7 @@ import { useState, useEffect } from "react";
 import DashboardHome from "@/component/DashboardHome";
 import AgentInformation from "@/component/AgentInformation";
 import Product from "@/component/Product/Product";
+import Order from "@/component/Order/Order";
 
 const { Header, Sider, Content } = Layout;
 
@@ -29,6 +30,12 @@ const menuItems = [
     label: "Products",
     icon: <ShoppingOutlined />,
     component: <Product />,
+  },
+  {
+    key: "4",
+    label: "Order",
+    icon: <ShoppingOutlined />,
+    component: <Order />,
   },
   {
     key: "3",

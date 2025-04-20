@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   Divider,
+  Progress,
 } from "antd";
 import {
   PlusOutlined,
@@ -34,7 +35,9 @@ const Product = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [currentProduct, setCurrentProduct] = useState(null);
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrls, setImageUrls] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
   const [form] = Form.useForm();
   const [sizes, setSizes] = useState([]);
   const [currentSize, setCurrentSize] = useState({
@@ -43,7 +46,17 @@ const Product = () => {
     length: undefined,
     sleeve: undefined,
     shoulder: undefined,
+    stock: undefined,
   });
+
+  // Define categories and subcategories
+  const categories = {
+    Men: ["Shirts", "Pants", "Shoes", "Accessories"],
+    Women: ["Dresses", "Tops", "Bottoms", "Accessories"],
+    Kids: ["Boys", "Girls", "Infants"],
+  };
+
+  const [availableSubCategories, setAvailableSubCategories] = useState([]);
 
   useEffect(() => {
     fetchProducts();
@@ -61,28 +74,52 @@ const Product = () => {
     }
   };
 
-  const handleUpload = async (file) => {
+  const handleCategoryChange = (category) => {
+    setAvailableSubCategories(categories[category] || []);
+    form.setFieldsValue({ subCategory: undefined }); // Reset subCategory when category changes
+  };
+
+  const handleUpload = async (file, index) => {
     const formData = new FormData();
     formData.append("image", file);
 
     try {
+      setUploading(true);
+      setUploadProgress((prev) => ({ ...prev, [index]: 0 }));
+
       const response = await fetch(
         "https://api.imgbb.com/1/upload?key=469a04307304348b89f3e402eb9bf96f",
         {
           method: "POST",
           body: formData,
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress((prev) => ({
+              ...prev,
+              [index]: percentCompleted,
+            }));
+          },
         }
       );
 
       const data = await response.json();
       if (data.success) {
-        setImageUrl(data.data.url);
+        setImageUrls((prev) => [...prev, data.data.url]);
         return data.data.url;
       }
       throw new Error("Image upload failed");
     } catch (error) {
-      message.error("Image upload failed");
+      message.error(`Image upload failed: ${error.message}`);
       return "";
+    } finally {
+      setUploading(false);
+      setUploadProgress((prev) => {
+        const newProgress = { ...prev };
+        delete newProgress[index];
+        return newProgress;
+      });
     }
   };
 
@@ -90,12 +127,14 @@ const Product = () => {
     const isJpgOrPng = file.type === "image/jpeg" || file.type === "image/png";
     if (!isJpgOrPng) {
       message.error("You can only upload JPG/PNG file!");
+      return Upload.LIST_IGNORE;
     }
     const isLt2M = file.size / 1024 / 1024 < 2;
     if (!isLt2M) {
       message.error("Image must smaller than 2MB!");
+      return Upload.LIST_IGNORE;
     }
-    return isJpgOrPng && isLt2M;
+    return true;
   };
 
   const addSize = () => {
@@ -104,9 +143,10 @@ const Product = () => {
       !currentSize.chest ||
       !currentSize.length ||
       !currentSize.sleeve ||
-      !currentSize.shoulder
+      !currentSize.shoulder ||
+      currentSize.stock === undefined
     ) {
-      message.error("Please fill all size fields");
+      message.error("Please fill all size fields including stock");
       return;
     }
     setSizes([...sizes, currentSize]);
@@ -116,6 +156,7 @@ const Product = () => {
       length: undefined,
       sleeve: undefined,
       shoulder: undefined,
+      stock: undefined,
     });
   };
 
@@ -125,18 +166,28 @@ const Product = () => {
     setSizes(newSizes);
   };
 
+  const removeImage = (index) => {
+    const newImages = [...imageUrls];
+    newImages.splice(index, 1);
+    setImageUrls(newImages);
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      values.image = imageUrl;
+      values.images = imageUrls;
       values.sizes = sizes;
+
+      if (imageUrls.length === 0 || imageUrls.length > 3) {
+        message.error("Please upload 1-3 product images");
+        return;
+      }
 
       if (sizes.length === 0) {
         message.error("Please add at least one size");
         return;
       }
 
-      // Ensure we have the product ID when in edit mode
       if (editMode && !currentProduct?._id) {
         message.error("Product ID missing");
         return;
@@ -156,7 +207,7 @@ const Product = () => {
 
       setModalVisible(false);
       form.resetFields();
-      setImageUrl("");
+      setImageUrls([]);
       setSizes([]);
       fetchProducts();
     } catch (error) {
@@ -170,12 +221,14 @@ const Product = () => {
   const handleEdit = (product) => {
     setCurrentProduct(product);
     setEditMode(true);
-    setImageUrl(product.image);
+    setImageUrls(product.images);
     setSizes(product.sizes);
     form.setFieldsValue({
       ...product,
       sizes: undefined, // We handle sizes separately
     });
+    // Set available subcategories based on current category
+    setAvailableSubCategories(categories[product.category] || []);
     setModalVisible(true);
   };
 
@@ -191,15 +244,20 @@ const Product = () => {
 
   const columns = [
     {
-      title: "Image",
-      dataIndex: "image",
-      key: "image",
-      render: (image) => (
-        <img
-          src={image}
-          alt="product"
-          style={{ width: 50, height: 50, objectFit: "cover" }}
-        />
+      title: "Images",
+      dataIndex: "images",
+      key: "images",
+      render: (images) => (
+        <div style={{ display: "flex", gap: "8px" }}>
+          {images.slice(0, 3).map((image, index) => (
+            <img
+              key={index}
+              src={image}
+              alt="product"
+              style={{ width: 50, height: 50, objectFit: "cover" }}
+            />
+          ))}
+        </div>
       ),
     },
     {
@@ -211,6 +269,12 @@ const Product = () => {
       title: "Category",
       dataIndex: "category",
       key: "category",
+    },
+    {
+      title: "Sub Category",
+      dataIndex: "subCategory",
+      key: "subCategory",
+      render: (subCategory) => subCategory || "-",
     },
     {
       title: "Price",
@@ -229,13 +293,19 @@ const Product = () => {
     },
     {
       title: "Stock",
-      dataIndex: "stock",
+      dataIndex: "sizes",
       key: "stock",
-      render: (stock) => (
-        <Tag color={stock > 0 ? "green" : "red"}>
-          {stock > 0 ? `${stock} in stock` : "Out of stock"}
-        </Tag>
-      ),
+      render: (sizes) => {
+        const totalStock = sizes.reduce(
+          (sum, size) => sum + (size.stock || 0),
+          0
+        );
+        return (
+          <Tag color={totalStock > 0 ? "green" : "red"}>
+            {totalStock > 0 ? `${totalStock} in stock` : "Out of stock"}
+          </Tag>
+        );
+      },
     },
     {
       title: "Sizes",
@@ -244,7 +314,9 @@ const Product = () => {
       render: (sizes) => (
         <div>
           {sizes.map((size, index) => (
-            <Tag key={index}>{size.size}</Tag>
+            <Tag key={index}>
+              {size.size} (Qty: {size.stock})
+            </Tag>
           ))}
         </div>
       ),
@@ -282,7 +354,7 @@ const Product = () => {
             onClick={() => {
               setEditMode(false);
               setCurrentProduct(null);
-              setImageUrl("");
+              setImageUrls([]);
               setSizes([]);
               form.resetFields();
               setModalVisible(true);
@@ -305,7 +377,8 @@ const Product = () => {
         onOk={handleSubmit}
         onCancel={() => setModalVisible(false)}
         width={800}
-        okText={editMode ? "Update" : "Create"}>
+        okText={editMode ? "Update" : "Create"}
+        confirmLoading={uploading}>
         <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>
@@ -325,10 +398,32 @@ const Product = () => {
                 rules={[
                   { required: true, message: "Please select category!" },
                 ]}>
-                <Select placeholder="Select category">
-                  <Option value="Men">Men</Option>
-                  <Option value="Women">Women</Option>
-                  <Option value="Kids">Kids</Option>
+                <Select
+                  placeholder="Select category"
+                  onChange={handleCategoryChange}>
+                  {Object.keys(categories).map((category) => (
+                    <Option key={category} value={category}>
+                      {category}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="subCategory" label="Sub Category">
+                <Select
+                  placeholder="Select sub category"
+                  allowClear
+                  showSearch
+                  optionFilterProp="children">
+                  {availableSubCategories.map((subCat) => (
+                    <Option key={subCat} value={subCat}>
+                      {subCat}
+                    </Option>
+                  ))}
                 </Select>
               </Form.Item>
             </Col>
@@ -368,31 +463,55 @@ const Product = () => {
           </Row>
 
           <Form.Item
-            name="image"
-            label="Product Image"
-            extra="Upload product image (max 2MB)">
-            <Upload
-              name="image"
-              listType="picture-card"
-              showUploadList={false}
-              beforeUpload={beforeUpload}
-              customRequest={async ({ file }) => {
-                const url = await handleUpload(file);
-                return url;
-              }}>
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt="product"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <div>
-                  <UploadOutlined />
-                  <div style={{ marginTop: 8 }}>Upload</div>
+            label="Product Images"
+            extra="Upload 1-3 product images (max 2MB each)">
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              {imageUrls.map((url, index) => (
+                <div key={index} style={{ position: "relative" }}>
+                  <img
+                    src={url}
+                    alt="product"
+                    style={{ width: 100, height: 100, objectFit: "cover" }}
+                  />
+                  <Button
+                    type="link"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => removeImage(index)}
+                    style={{ position: "absolute", top: 0, right: 0 }}
+                  />
                 </div>
+              ))}
+              {imageUrls.length < 3 && (
+                <Upload
+                  name="image"
+                  listType="picture-card"
+                  showUploadList={false}
+                  beforeUpload={beforeUpload}
+                  customRequest={async ({ file, onSuccess, onError }) => {
+                    try {
+                      const url = await handleUpload(file, imageUrls.length);
+                      onSuccess(url, file);
+                    } catch (error) {
+                      onError(error);
+                    }
+                  }}
+                  disabled={uploading || imageUrls.length >= 3}>
+                  <div>
+                    <UploadOutlined />
+                    <div style={{ marginTop: 8 }}>Upload</div>
+                  </div>
+                </Upload>
               )}
-            </Upload>
+            </div>
+            {Object.keys(uploadProgress).map((key) => (
+              <Progress
+                key={key}
+                percent={uploadProgress[key]}
+                status="active"
+                style={{ width: "100%" }}
+              />
+            ))}
           </Form.Item>
 
           <Form.Item
@@ -402,7 +521,7 @@ const Product = () => {
             <TextArea rows={4} placeholder="Enter product description" />
           </Form.Item>
 
-          <Divider orientation="left">Product Sizes</Divider>
+          <Divider orientation="left">Product Sizes & Stock</Divider>
 
           <div style={{ marginBottom: 16 }}>
             <Row gutter={16}>
@@ -415,7 +534,7 @@ const Product = () => {
                   }
                 />
               </Col>
-              <Col span={4}>
+              <Col span={3}>
                 <InputNumber
                   placeholder="Chest"
                   style={{ width: "100%" }}
@@ -425,7 +544,7 @@ const Product = () => {
                   }
                 />
               </Col>
-              <Col span={4}>
+              <Col span={3}>
                 <InputNumber
                   placeholder="Length"
                   style={{ width: "100%" }}
@@ -435,7 +554,7 @@ const Product = () => {
                   }
                 />
               </Col>
-              <Col span={4}>
+              <Col span={3}>
                 <InputNumber
                   placeholder="Sleeve"
                   style={{ width: "100%" }}
@@ -445,13 +564,24 @@ const Product = () => {
                   }
                 />
               </Col>
-              <Col span={4}>
+              <Col span={3}>
                 <InputNumber
                   placeholder="Shoulder"
                   style={{ width: "100%" }}
                   value={currentSize.shoulder}
                   onChange={(value) =>
                     setCurrentSize({ ...currentSize, shoulder: value })
+                  }
+                />
+              </Col>
+              <Col span={4}>
+                <InputNumber
+                  placeholder="Stock"
+                  style={{ width: "100%" }}
+                  min={0}
+                  value={currentSize.stock}
+                  onChange={(value) =>
+                    setCurrentSize({ ...currentSize, stock: value })
                   }
                 />
               </Col>
@@ -471,6 +601,7 @@ const Product = () => {
                 <span>Length: {size.length}</span>
                 <span>Sleeve: {size.sleeve}</span>
                 <span>Shoulder: {size.shoulder}</span>
+                <span>Stock: {size.stock}</span>
                 <Button
                   type="link"
                   danger
@@ -480,19 +611,6 @@ const Product = () => {
               </Space>
             </Card>
           ))}
-
-          <Form.Item
-            name="stock"
-            label="Total Stock"
-            rules={[
-              { required: true, message: "Please input stock quantity!" },
-            ]}>
-            <InputNumber
-              style={{ width: "100%" }}
-              min={0}
-              placeholder="Enter total stock quantity"
-            />
-          </Form.Item>
         </Form>
       </Modal>
     </div>
