@@ -16,6 +16,7 @@ import AgentInformation from "@/component/AgentInformation";
 import Product from "@/component/Product/Product";
 import Order from "@/component/Order/Order";
 import SliderTemp from "@/component/DynamicTemp/SliderTemp";
+import StoryTemp from "@/component/DynamicTemp/StoryTemp";
 
 const { Header, Sider, Content } = Layout;
 
@@ -46,6 +47,12 @@ const menuItems = [
   },
   {
     key: "5",
+    label: "Add Story",
+    icon: <ShoppingOutlined />,
+    component: <StoryTemp />,
+  },
+  {
+    key: "6",
     label: "Users",
     icon: <UsergroupAddOutlined />,
     component: <AgentInformation />,
