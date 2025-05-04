@@ -15,6 +15,7 @@ import DashboardHome from "@/component/DashboardHome";
 import AgentInformation from "@/component/AgentInformation";
 import Product from "@/component/Product/Product";
 import Order from "@/component/Order/Order";
+import SliderTemp from "@/component/DynamicTemp/SliderTemp";
 
 const { Header, Sider, Content } = Layout;
 
@@ -32,13 +33,19 @@ const menuItems = [
     component: <Product />,
   },
   {
-    key: "4",
+    key: "3",
     label: "Order",
     icon: <ShoppingOutlined />,
     component: <Order />,
   },
   {
-    key: "3",
+    key: "4",
+    label: "Add Slider",
+    icon: <ShoppingOutlined />,
+    component: <SliderTemp />,
+  },
+  {
+    key: "5",
     label: "Users",
     icon: <UsergroupAddOutlined />,
     component: <AgentInformation />,
