@@ -297,7 +297,9 @@ const OrderManagement = () => {
               confirmStatusChange(record._id, record.status.type, value)
             }
             disabled={
-              record.status.type === "cancelled" || statusChanging[record._id]
+              record.status.type === "cancelled" ||
+              record.status.type === "delivered" || // Disable if delivered
+              statusChanging[record._id]
             }
             loading={statusChanging[record._id]}>
             <Option value="pending">Pending</Option>
@@ -310,8 +312,14 @@ const OrderManagement = () => {
             title="Are you sure to delete this order?"
             onConfirm={() => handleDeleteOrder(record._id)}
             okText="Yes"
-            cancelText="No">
-            <Button danger icon={<DeleteOutlined />} />
+            cancelText="No"
+            disabled={record.status.type === "delivered"} // Disable if delivered
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              disabled={record.status.type === "delivered"} // Disable if delivered
+            />
           </Popconfirm>
         </Space>
       ),
